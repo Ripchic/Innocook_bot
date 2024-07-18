@@ -1,0 +1,5 @@
+python-dotenv~=1.0.1
+paho-mqtt~=2.1.0
+aiogram~=3.8.0
+pymongo~=4.8.0
+motor~=3.5.1

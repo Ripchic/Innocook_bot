@@ -29,8 +29,17 @@ FLAG_EXIT = False
 def on_connect(client, userdata, flags, rc):
     if rc == 0 and client.is_connected():
         print("Connected to MQTT Broker!")
+        client.subscribe("status")
+        client.subscribe("notification")
+        client.subscribe("error")
+        client.subscribe("new_device")
+        client.subscribe("reg_conf")
     else:
         print(f'Failed to connect, return code {rc}')
+
+
+def on_subscribe(client, userdata, mid, granted_qos):
+    print(f"Subscribed to topic")
 
 
 def on_disconnect(client, userdata, rc):
@@ -75,14 +84,9 @@ def init_client():
     client.username_pw_set(USERNAME, PASSWORD)
     client.connect_async(BROKER, PORT, keepalive=120)
     client.on_connect = on_connect
+    client.on_subscribe = on_subscribe
     client.on_disconnect = on_disconnect
     client.on_message = on_message
-
-    client.subscribe("status")
-    client.subscribe("notification")
-    client.subscribe("error")
-    client.subscribe("new_device")
-    client.subscribe("reg_conf")
 
     client.loop_start()
 
@@ -151,7 +155,8 @@ def connect_mqtt(db: MDB):
         print(f"User {user_id} has successfully registered a new device {device_id}")
         user = await db.users.find_one({"_id": user_id})
         db.users.update_one({"_id": user_id},
-                                  {"$push": {"devices": {"device_id": device_id, "name": "Новое устройство"}}})
+                            {"$push": {"devices": {"device_id": device_id, "name": "Новое устройство"}}})
         connections = user["connections"] + 1
         db.users.update_one({"_id": user_id}, {"$set": {"connections": connections}})
+
     return client

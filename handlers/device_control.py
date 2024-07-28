@@ -37,27 +37,31 @@ async def update_device_status(callback_query: CallbackQuery, device_name: str, 
 @router.callback_query(F.data.startswith("device_"))
 async def device_control(callback_query: CallbackQuery, state: FSMContext, db: MDB):
     await state.clear()  # clear the state if callback from back button
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user_id = callback_query.from_user.id
     user = await db.users.find_one({"_id": user_id})
     user_devices = user["devices"]
-    device_name = user_devices[device_id]
-    await update_device_status(callback_query, device_name, device_id, "Устарело", "Устарело", "Устарело", "Устарело")
+    device = user_devices[button_id]
+    device_id = device["device_id"]
+    device_name = device["name"]
+    await update_device_status(callback_query, device_name, button_id, "Устарело", "Устарело", "Устарело", "Устарело")
     await callback_query.answer()
 
 
 @router.callback_query(F.data.startswith("on_"))
 async def device_on(callback_query: CallbackQuery, mqtt_client, db: MDB):
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user = await db.users.find_one({"_id": callback_query.from_user.id})
     user_devices = user["devices"]
-    device_name = user_devices[device_id]
+    device = user_devices[button_id]
+    device_name = device["name"]
+    device_id = device["device_id"]
     status = "Включено"
     temperature = timer = duration = "Значение с сувида"
     if callback_query.message.text != device_status_text(device_name, status, temperature, timer, duration):
-        await update_device_status(callback_query, device_name, device_id, status, temperature, timer, duration)
+        await update_device_status(callback_query, device_name, button_id, status, temperature, timer, duration)
         # await publish_message(mqtt_client, callback_query.from_user.id, device_name, "on")
-        await publish.set_power(mqtt_client, callback_query.from_user.id, device_name, "on")
+        await publish.set_power(mqtt_client, callback_query.from_user.id, device_id, "on")
     else:
         await callback_query.message.answer(f"Устройство '{device_name}' уже включено.", reply_markup=inline_builder(
             ["<< Назад"],
@@ -67,16 +71,18 @@ async def device_on(callback_query: CallbackQuery, mqtt_client, db: MDB):
 
 @router.callback_query(F.data.startswith("off_"))
 async def device_off(callback_query: CallbackQuery, mqtt_client, db: MDB):
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user = await db.users.find_one({"_id": callback_query.from_user.id})
     user_devices = user["devices"]
-    device_name = user_devices[device_id]
+    device = user_devices[button_id]
+    device_name = device["name"]
+    device_id = device["device_id"]
     status = "Выключено"
     temperature = timer = duration = "Значение с сувида"
     if callback_query.message.text != device_status_text(device_name, status, temperature, timer, duration):
         await update_device_status(callback_query, device_name, device_id, status, temperature, timer, duration)
         # await publish_message(mqtt_client, callback_query.from_user.id, device_name, "off")
-        await publish.set_power(mqtt_client, callback_query.from_user.id, device_name, "off")
+        await publish.set_power(mqtt_client, callback_query.from_user.id, device_id, "off")
     else:
         await callback_query.message.answer(f"Устройство '{device_name}' и так не работает.",
                                             reply_markup=inline_builder(
@@ -87,10 +93,12 @@ async def device_off(callback_query: CallbackQuery, mqtt_client, db: MDB):
 
 @router.callback_query(F.data.startswith("status_"))
 async def device_status(callback_query: CallbackQuery, mqtt_client, db: MDB):
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user = await db.users.find_one({"_id": callback_query.from_user.id})
     user_devices = user["devices"]
-    device_name = user_devices[device_id]
+    device = user_devices[button_id]
+    device_name = device["name"]
+    device_id = device["device_id"]
     status = "Статус с сувида"
     temperature = timer = duration = "Значение с сувида"
     await update_device_status(callback_query, device_name, device_id, status, temperature, timer, duration)
@@ -100,9 +108,11 @@ async def device_status(callback_query: CallbackQuery, mqtt_client, db: MDB):
 
 @router.callback_query(F.data.startswith("temperature_"))
 async def cb_add_device(callback_query: CallbackQuery, state: FSMContext, db: MDB):
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user = await db.users.find_one({"_id": callback_query.from_user.id})
     user_devices = user["devices"]
+    device = user_devices[button_id]
+    device_id = device["device_id"]
     device_name = user_devices[device_id]
     await callback_query.message.delete()
     await callback_query.message.answer(f"Введите требуемую температуру для '{device_name}'",
@@ -143,9 +153,11 @@ async def set_temperature(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("timer_"))
 async def cb_add_device(callback_query: CallbackQuery, state: FSMContext, db: MDB):
-    device_id = int(callback_query.data.split('_', 1)[1])
+    button_id = int(callback_query.data.split('_')[1])
     user = await db.users.find_one({"_id": callback_query.from_user.id})
     user_devices = user["devices"]
+    device = user_devices[button_id]
+    device_id = device["device_id"]
     device_name = user_devices[device_id]
     await callback_query.message.delete()
     await callback_query.message.answer(f"Введите время работы '{device_name}' в формате 'часы.минуты'",
@@ -157,11 +169,15 @@ async def cb_add_device(callback_query: CallbackQuery, state: FSMContext, db: MD
 
 
 @router.message(DeviceControl.timer, F.text.regexp(r'^-?\d+(\.\d+)?$|^-?\d+,\d+$'))
-async def set_timer(message: Message, state: FSMContext, mqtt_client):
+async def set_timer(message: Message, state: FSMContext, mqtt_client, db: MDB):
     timer = message.text
     data = await state.get_data()
-    device_id = data['device_id']
+    button_id = data['device_id']
     user_id = message.from_user.id
+    user = await db.users.find_one({"_id": user_id})
+    user_devices = user["devices"]
+    device = user_devices[button_id]
+    device_id = device["device_id"]
     # await publish_message(mqtt_client, user_id, device_id, f"timer:{timer}")
     await publish.set_timer(mqtt_client, user_id, device_id, timer)
     await state.clear()

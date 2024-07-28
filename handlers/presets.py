@@ -241,9 +241,9 @@ async def run_preset(callback_query: CallbackQuery, db: MDB, mqtt_client):
     preset_id = int(callback_query.data.split('_', -1)[2])
     device_id = int(callback_query.data.split('_', -1)[3])
     user_id = callback_query.from_user.id
-    # user = await db.users.find_one({"_id": user_id})
+    user = await db.users.find_one({"_id": user_id})
     user_presets = user["presets"]
     preset = user_presets[preset_id]
-    await publish.set_preset(mqtt_client, user_id, db)
+    # await publish.set_preset(mqtt_client, user_id, db)
     await callback_query.answer("Пресет запущен.")
     await callback_query.message.edit_text("Пресет запущен.")

@@ -69,9 +69,10 @@ async def cmd_start(message: Message, db: MDB):
     await db.users.insert_one({
         "_id": user_id,
         "devices": [],
-        "presets": []
+        "presets": [],
+        "connections": 0
     })
-    await message.answr()
+    await message.answer() #?
 
 
 @router.message(Command("user_id"))

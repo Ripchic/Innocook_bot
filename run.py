@@ -17,10 +17,11 @@ async def main():
     bot = Bot(token=os.getenv("BOT_TOKEN"),
               default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
-    mqtt_client = setup.connect_mqtt()
 
     cluster = AsyncIOMotorClient(host="localhost", port=27017)
     db = cluster.Innocook
+
+    mqtt_client = setup.connect_mqtt(db)
 
     # Include used routers in correct order
     dp.include_routers(

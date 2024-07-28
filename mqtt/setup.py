@@ -3,10 +3,13 @@ import time
 from dotenv import load_dotenv
 import os
 import asyncio
+import json
 
 from paho.mqtt import client as mqtt_client
 
 from mqtt import subscribe as sub
+
+from motor.core import AgnosticDatabase as MDB
 
 load_dotenv()
 BROKER = os.getenv('MQTT_BROKER')
@@ -67,22 +70,88 @@ async def publish_message(cli, user_id, device_name, payload):
         print(f"Failed to send message to topic {topic}")
 
 
-def connect_mqtt():
+def init_client():
     client = mqtt_client.Client(client_id=CLIENT_ID, clean_session=False)
     client.username_pw_set(USERNAME, PASSWORD)
+    client.connect_async(BROKER, PORT, keepalive=120)
     client.on_connect = on_connect
-    client.connect(BROKER, PORT, keepalive=120)
     client.on_disconnect = on_disconnect
-
-    # topic listeners
-    client.message_callback_add("status", sub.on_status)
-    client.message_callback_add("notification", sub.on_notification)
-    client.message_callback_add("error", sub.on_error)
     client.on_message = on_message
 
     client.subscribe("status")
     client.subscribe("notification")
     client.subscribe("error")
+    client.subscribe("new_device")
+    client.subscribe("reg_conf")
 
     client.loop_start()
+
+    # get the main event loop
+    loop = asyncio.get_event_loop()
+
+    def topic(sub):
+        def decorator(coro):
+            async def async_wrapper(client, userdata, msg):
+                await coro(client, userdata, msg)
+
+            @client.topic_callback(sub)
+            def handle(client, userdata, msg):
+                asyncio.run_coroutine_threadsafe(async_wrapper(client, userdata, msg), loop)
+
+        return decorator
+
+    return client, topic
+
+
+def connect_mqtt(db: MDB):
+    client, topic = init_client()
+
+    @topic("status")
+    async def on_status(client, userdata, msg):
+        print("Status message received")
+        await asyncio.sleep(1)
+        # Process status message
+
+    @topic("notification")
+    async def on_notification(client, userdata, msg):
+        print("Notification message received")
+        await asyncio.sleep(1)
+        # Process notification message
+
+    @topic("error")
+    async def on_error(client, userdata, msg):
+        print("Error message received")
+        await asyncio.sleep(1)
+        # Process error message
+
+    @topic("new_device")
+    async def database_registration(client, userdata, msg):
+        print("Registration message received")
+        user_id = int(msg.payload.decode())
+        # print(f"{user_id}")
+        user = await db.users.find_one({"_id": user_id})
+        # print(f"{user}")
+        connections = user["connections"]
+        # print(f"Connections for user_id {user_id} incremented to {connections}")
+        # await db.users.update_one({"_id": user_id}, {"$set": {"connections": connections}})
+        print(f"{user_id}; {connections}")
+        client.publish(f"{user_id}", f"{connections}")
+        print(f"Connections for user_id {user_id} published to topic {user_id}")
+        # print(f"Connections for user_id {user_id} published to topic {user_id}")
+        # Process registration message
+
+    @topic("reg_conf")
+    async def registration_confirmation(client, userdata, msg):
+        print("Registration confirmation message received")
+        message = msg.payload.decode()
+        print(message)
+        parsed_message = json.loads(message)
+        user_id = int(parsed_message["user_id"])
+        device_id = int(parsed_message["device_id"])
+        print(f"User {user_id} has successfully registered a new device {device_id}")
+        user = await db.users.find_one({"_id": user_id})
+        db.users.update_one({"_id": user_id},
+                                  {"$push": {"devices": {"device_id": device_id, "name": "Новое устройство"}}})
+        connections = user["connections"] + 1
+        db.users.update_one({"_id": user_id}, {"$set": {"connections": connections}})
     return client

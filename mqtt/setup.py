@@ -7,8 +7,6 @@ import json
 
 from paho.mqtt import client as mqtt_client
 
-from mqtt import subscribe as sub
-
 from motor.core import AgnosticDatabase as MDB
 
 load_dotenv()
@@ -107,26 +105,37 @@ def init_client():
     return client, topic
 
 
-def connect_mqtt(db: MDB):
+def connect_mqtt(db: MDB, bot):
     client, topic = init_client()
 
     @topic("status")
     async def on_status(client, userdata, msg):
         print("Status message received")
-        await asyncio.sleep(1)
-        # Process status message
+        message = msg.payload.decode()
+        parsed_message = json.loads(message)
+        user_id = int(parsed_message["user_id"])
+        device_id = int(parsed_message["device_id"])
+        await bot.send_message(user_id, f"Состояние устройства {device_id}:\n{parsed_message}")
 
     @topic("notification")
     async def on_notification(client, userdata, msg):
         print("Notification message received")
-        await asyncio.sleep(1)
-        # Process notification message
+        message = msg.payload.decode()
+        parsed_message = json.loads(message)
+        user_id = int(parsed_message["user_id"])
+        device_id = int(parsed_message["device_id"])
+        notification = parsed_message["info"]
+        await bot.send_message(user_id, f"Код уведомления от устройства {device_id}:\n{notification}")
 
     @topic("error")
     async def on_error(client, userdata, msg):
         print("Error message received")
-        await asyncio.sleep(1)
-        # Process error message
+        message = msg.payload.decode()
+        parsed_message = json.loads(message)
+        user_id = int(parsed_message["user_id"])
+        device_id = int(parsed_message["device_id"])
+        error = parsed_message["info"]
+        await bot.send_message(user_id, f"Код ошибки от устройства {device_id}:\n{error}")
 
     @topic("new_device")
     async def database_registration(client, userdata, msg):

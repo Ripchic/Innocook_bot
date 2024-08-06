@@ -12,16 +12,20 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 
 
-async def main():
-    load_dotenv()  # add .env file to the project root
+async def init_bot():
     bot = Bot(token=os.getenv("BOT_TOKEN"),
               default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    return bot, dp
 
+
+async def main():
+    load_dotenv()  # add .env file to the project root
+    bot, dp = await init_bot()
     cluster = AsyncIOMotorClient(host="localhost", port=27017)
     db = cluster.Innocook
 
-    mqtt_client = setup.connect_mqtt(db)
+    mqtt_client = setup.connect_mqtt(db, bot)
 
     # Include used routers in correct order
     dp.include_routers(

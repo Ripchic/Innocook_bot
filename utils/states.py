@@ -2,8 +2,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class DeviceManagement(StatesGroup):
-    add_name = State()
-    remove_name = State()
+    edit_device_name = State()
 
 
 class DeviceControl(StatesGroup):

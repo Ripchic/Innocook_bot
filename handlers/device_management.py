@@ -3,7 +3,6 @@ from aiogram.filters import StateFilter
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
-from utils.states import DeviceManagement
 from keyboards import builders
 
 from motor.core import AgnosticDatabase as MDB
@@ -13,6 +12,7 @@ from paho.mqtt.client import Client
 router = Router()
 
 
+# Мои устройства
 @router.callback_query(F.data.startswith("devices"))
 async def show_devices(callback_query: CallbackQuery, state: FSMContext, db: MDB):
     await state.clear()  # clear state if callback from back button
@@ -39,8 +39,3 @@ async def cb_device_managemt_instruction(callback_query: CallbackQuery):
         ["delete"],
         [1]
     ))
-
-
-@router.callback_query(F.data == "delete")
-async def cb_device_managemt_instruction(callback_query: CallbackQuery, state: FSMContext):
-    await callback_query.message.delete()

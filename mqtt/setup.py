@@ -66,8 +66,8 @@ def on_message(client, userdata, msg):
     print(f'Received `{msg.payload.decode()}` from `{msg.topic}` topic')
 
 
-async def publish_message(cli, user_id, device_name, payload):
-    topic = f'{user_id}/{device_name}'
+async def publish_message(cli, user_id, device_id, payload):
+    topic = f'{user_id}/{device_id}'
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, cli.publish, topic, payload)
     status = result[0]

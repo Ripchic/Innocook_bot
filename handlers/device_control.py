@@ -3,9 +3,8 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from utils.states import DeviceControl
 from keyboards.builders import inline_builder
-# from mqtt.mqtt_setup import publish_message
 from mqtt import publish
-
+from utils.states import DeviceManagement
 from motor.core import AgnosticDatabase as MDB
 
 router = Router()
@@ -16,8 +15,7 @@ def device_status_text(device_name: str, status: str, temperature: str, timer: s
            f"Устройство: '{device_name}':\n" \
            f"Состояние:{status}\n" \
            f"Температура: {temperature}\n" \
-           f"Таймер: {timer}\n" \
-           f"Время с последнего запуска: {duration}"
+           f"Таймер: {timer}\n"
 
 
 async def update_device_status(callback_query: CallbackQuery, device_name: str, device_id: int, status: str,
@@ -26,14 +24,15 @@ async def update_device_status(callback_query: CallbackQuery, device_name: str, 
     await callback_query.message.edit_text(
         device_status_text(device_name, status, temperature, timer, duration),
         reply_markup=inline_builder(
-            ["Старт", "Стоп", "Мои пресеты", "Температура", "Таймер", "<< Назад", "Состояние"],
+            ["Старт", "Стоп", "Мои пресеты", "Состояние", "Изменить имя", "<< Назад", "Удалить"],
             [f"{val}_{device_id}" for val in
-             ["on", "off", "presets", "temperature", "timer", "devices", "status"]],
-            [2, 1, 2, 2]
+             ["on", "off", "presets", "status", "editDeviceName", "devices", "removeDevice"]],
+            [2, 1, 1, 1, 2]
         )
     )
 
 
+# action_<pressed button index>
 @router.callback_query(F.data.startswith("device_"))
 async def device_control(callback_query: CallbackQuery, state: FSMContext, db: MDB):
     await state.clear()  # clear the state if callback from back button
@@ -60,7 +59,6 @@ async def device_on(callback_query: CallbackQuery, mqtt_client, db: MDB):
     temperature = timer = duration = "Значение с сувида"
     if callback_query.message.text != device_status_text(device_name, status, temperature, timer, duration):
         await update_device_status(callback_query, device_name, button_id, status, temperature, timer, duration)
-        # await publish_message(mqtt_client, callback_query.from_user.id, device_name, "on")
         await publish.set_power(mqtt_client, callback_query.from_user.id, device_id, "on")
     else:
         await callback_query.message.answer(f"Устройство '{device_name}' уже включено.", reply_markup=inline_builder(
@@ -80,8 +78,7 @@ async def device_off(callback_query: CallbackQuery, mqtt_client, db: MDB):
     status = "Выключено"
     temperature = timer = duration = "Значение с сувида"
     if callback_query.message.text != device_status_text(device_name, status, temperature, timer, duration):
-        await update_device_status(callback_query, device_name, device_id, status, temperature, timer, duration)
-        # await publish_message(mqtt_client, callback_query.from_user.id, device_name, "off")
+        await update_device_status(callback_query, device_name, button_id, status, temperature, timer, duration)
         await publish.set_power(mqtt_client, callback_query.from_user.id, device_id, "off")
     else:
         await callback_query.message.answer(f"Устройство '{device_name}' и так не работает.",
@@ -101,104 +98,48 @@ async def device_status(callback_query: CallbackQuery, mqtt_client, db: MDB):
     device_id = device["device_id"]
     status = "Статус с сувида"
     temperature = timer = duration = "Значение с сувида"
-    await update_device_status(callback_query, device_name, device_id, status, temperature, timer, duration)
-    # await publish_message(mqtt_client, callback_query.from_user.id, device_name, "status")
-    await publish.get_status(mqtt_client, callback_query.from_user.id, device_name)
+    await update_device_status(callback_query, device_name, button_id, status, temperature, timer, duration)
+    await publish.get_status(mqtt_client, callback_query.from_user.id, device_id)
 
 
-@router.callback_query(F.data.startswith("temperature_"))
-async def cb_add_device(callback_query: CallbackQuery, state: FSMContext, db: MDB):
+@router.callback_query(F.data.startswith("editDeviceName"))
+async def edit_device_name(callback_query: CallbackQuery, state: FSMContext):
     button_id = int(callback_query.data.split('_')[1])
-    user = await db.users.find_one({"_id": callback_query.from_user.id})
-    user_devices = user["devices"]
-    device = user_devices[button_id]
-    device_id = device["device_id"]
-    device_name = user_devices[device_id]
-    await callback_query.message.delete()
-    await callback_query.message.answer(f"Введите требуемую температуру для '{device_name}'",
-                                        reply_markup=inline_builder(
-                                            ["<< Назад"], [f"device_{device_id}"], [1]
-                                        ))
-    await state.set_state(DeviceControl.temperature)
-    await state.update_data(device_id=device_id)
+    await state.update_data(button_id=button_id)
+    await callback_query.message.edit_text("Введите новое имя устройства:")
+    await state.set_state(DeviceManagement.edit_device_name)
+    await callback_query.answer()
 
 
-#  regex for checking if the input is a number
-@router.message(DeviceControl.temperature, F.text.regexp(r'^-?\d+(\.\d+)?$|^-?\d+,\d+$'))
-async def set_temperature(message: Message, state: FSMContext, mqtt_client):
-    temperature = message.text
-    data = await state.get_data()
-    device_id = data['device_id']
+@router.message(DeviceManagement.edit_device_name)
+async def set_device_name(message: Message, state: FSMContext, db: MDB):
+    new_name = message.text
+    await state.update_data(edit_device_name=new_name)
     user_id = message.from_user.id
-    # await publish_message(mqtt_client, user_id, device_id, f"temp:{temperature}")
-    await publish.set_temperature(mqtt_client, user_id, device_id, temperature)
+    data = await state.get_data()
+    button_id = data["button_id"]
+    await db.users.update_one({"_id": user_id},
+                              {"$set": {f"devices.{button_id}.name": new_name}})
     await state.clear()
-    await message.answer("Температура успешно задана.", reply_markup=inline_builder(
-        ["<< Назад"],
-        [f"device_{device_id}"],
+    await message.answer(f"Имя устройства успешно изменено на '{new_name}'.", reply_markup=inline_builder(
+        ["К списку устройств"],
+        ["devices"],
         [1]
     ))
 
 
-# if the input is not a number
-@router.message(DeviceControl.temperature)
-async def set_temperature(message: Message, state: FSMContext):
-    data = await state.get_data()
-    device_id = data['device_id']
-    await message.answer("Температура должна быть числом \nВведите число еще раз.", reply_markup=inline_builder(
-        ["<< Назад"],
-        [f"device_{device_id}"],
-        [1]))
-
-
-@router.callback_query(F.data.startswith("timer_"))
-async def cb_add_device(callback_query: CallbackQuery, state: FSMContext, db: MDB):
+@router.callback_query(F.data.startswith("removeDevice"))
+async def remove_device(callback_query: CallbackQuery, db: MDB):
     button_id = int(callback_query.data.split('_')[1])
-    user = await db.users.find_one({"_id": callback_query.from_user.id})
-    user_devices = user["devices"]
-    device = user_devices[button_id]
-    device_id = device["device_id"]
-    device_name = user_devices[device_id]
-    await callback_query.message.delete()
-    await callback_query.message.answer(f"Введите время работы '{device_name}' в формате 'часы.минуты'",
-                                        reply_markup=inline_builder(
-                                            ["<< Назад"], [f"device_{device_id}"], [1]
-                                        ))
-    await state.set_state(DeviceControl.timer)
-    await state.update_data(device_id=device_id)
-
-
-@router.message(DeviceControl.timer, F.text.regexp(r'^-?\d+(\.\d+)?$|^-?\d+,\d+$'))
-async def set_timer(message: Message, state: FSMContext, mqtt_client, db: MDB):
-    timer = message.text
-    data = await state.get_data()
-    button_id = data['device_id']
-    user_id = message.from_user.id
+    user_id = callback_query.from_user.id
     user = await db.users.find_one({"_id": user_id})
     user_devices = user["devices"]
     device = user_devices[button_id]
+    device_name = device["name"]
     device_id = device["device_id"]
-    # await publish_message(mqtt_client, user_id, device_id, f"timer:{timer}")
-    await publish.set_timer(mqtt_client, user_id, device_id, timer)
-    await state.clear()
-    await message.answer("Таймер успешно задан.", reply_markup=inline_builder(
+    await db.users.update_one({"_id": user_id}, {"$pull": {"devices": {"device_id": device_id}}})
+    await callback_query.message.answer(f"Устройство '{device_name}' успешно удалено.", reply_markup=inline_builder(
         ["<< Назад"],
-        [f"device_{device_id}"],
+        ["devices"],
         [1]
     ))
-
-
-@router.message(DeviceControl.timer)
-async def set_timer(message: Message, state: FSMContext):
-    data = await state.get_data()
-    device_id = data['device_id']
-    await message.answer("Время должно быть числом \nВведите число еще раз.", reply_markup=inline_builder(
-        ["<< Назад"],
-        [f"device_{device_id}"],
-        [1]))
-
-
-@router.callback_query(F.data == "delete")
-async def cb_device_management_instruction(callback_query: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback_query.message.delete()

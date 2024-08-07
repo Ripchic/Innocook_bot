@@ -16,17 +16,18 @@ router = Router()
 
 @router.callback_query(F.data.startswith("presets_"))
 async def device_on(callback_query: CallbackQuery, db: MDB, state: FSMContext):
-    device_id = int(callback_query.data.split('_')[1])
+    button_id = int(callback_query.data.split('_')[1])
     user_id = callback_query.from_user.id
     user = await db.users.find_one({"_id": user_id})
     user_presets = user["presets"]
 
     # preset_presetID_deviceID
     await callback_query.message.edit_text(f"Ваши пресеты: {len(user_presets)} шт.", reply_markup=inline_builder(
-        text=[f"Имя: {preset["name"]}; Темп: {preset["temp"]}; Время: {preset["timer"]}" for preset in user_presets] + [
-            "Добавить пресет", "<< Назад"],
-        callback_data=[f"preset_{i}_{device_id}" for i, _ in enumerate(user_presets)] + [f"add_preset_{device_id}",
-                                                                                         f"device_{device_id}"],
+        text=[f"Имя: {preset["name"]}; Темп: {preset["temp"]}; Таймер: {preset["timer"]}" for preset in
+              user_presets] + [
+                 "Добавить пресет", "<< Назад"],
+        callback_data=[f"preset_{i}_{button_id}" for i, _ in enumerate(user_presets)] + [f"add_preset_{button_id}",
+                                                                                         f"device_{button_id}"],
         sizes=[1 for _ in range(len(user_presets) + 2)]
     ))
     await callback_query.answer()
@@ -41,8 +42,9 @@ async def device_on(callback_query: CallbackQuery, db: MDB):
     user_presets = user["presets"]
     preset = user_presets[preset_id]
     await callback_query.message.edit_text(f"Название пресета: '{preset["name"]}':", reply_markup=inline_builder(
-        text=["Запустить", "Редактировать", "<< Назад", "Удалить"],
-        callback_data=[f"run_preset_{preset_id}_{device_id}", f"edit_{preset_id}_{device_id}", f"presets_{device_id}",
+        text=["Установить", "Редактировать", "<< Назад", "Удалить"],
+        callback_data=[f"run_preset_{preset_id}_{device_id}", f"editPreset_{preset_id}_{device_id}",
+                       f"presets_{device_id}",
                        f"delete_preset_{preset_id}_{device_id}"],
         sizes=[1, 1, 2]
     ))
@@ -85,7 +87,7 @@ async def add_preset_name(message: Message, state: FSMContext):
 
     await state.update_data(name=preset_name)
     await state.set_state(PresetsManagement.temp)
-    await message.answer("Введите температуру для пресета:")
+    await message.answer("Введите температуру для пресета в формате 12 или 12.3:")
 
 
 @router.message(PresetsManagement.temp, F.text.regexp(r'^-?\d+(\.\d+)?$|^-?\d+,\d+$'))
@@ -94,13 +96,13 @@ async def add_preset_temp(message: Message, state: FSMContext, db: MDB):
 
     await state.update_data(temp=preset_temp)
     await state.set_state(PresetsManagement.timer)
-    await message.answer("Введите таймер пресета в формате часы.мин:")
+    await message.answer("Введите таймер пресета в формате чч или чч.мм:")
 
 
 @router.message(PresetsManagement.temp)
 async def add_preset_temp(message: Message):
     print(message.text)
-    await message.answer("Температура должна быть числом \nВведите число еще раз.")
+    await message.answer("Температура должна быть числом в формате 12 или 12.3\nВведите число еще раз.")
 
 
 @router.message(PresetsManagement.timer, F.text.regexp(r'^-?\d+(\.\d+)?$|^-?\d+,\d+$'))
@@ -128,7 +130,7 @@ async def add_preset_timer(message: Message, state: FSMContext, db: MDB):
 
 @router.message(PresetsManagement.timer)
 async def add_preset_timer(message: Message):
-    await message.answer("Таймер должен быть числом \nВведите число еще раз в формате часы.мин:")
+    await message.answer("Таймер должен быть числом в формате чч или чч.мм\nВведите число ещё раз:")
 
 
 @router.callback_query(F.data.startswith("edit_name_"))
@@ -187,7 +189,7 @@ async def edit_preset_temp(message: Message, state: FSMContext, db: MDB):
 
 @router.message(PresetsManagement.edit_temp)
 async def edit_preset_temp(message: Message):
-    await message.answer("Температура должна быть числом \nВведите число еще раз.")
+    await message.answer("Температура должна быть числом в формате 12 или 12.3 \nВведите число еще раз.")
 
 
 @router.callback_query(F.data.startswith("edit_timer_"))
@@ -197,7 +199,7 @@ async def edit_preset_timer(callback_query: CallbackQuery, state: FSMContext):
     await state.update_data(preset_id=preset_id)
     await state.update_data(device_id=device_id)
     await state.set_state(PresetsManagement.edit_timer)
-    await callback_query.message.edit_text("Введите новый таймер пресета в формате часы.мин:")
+    await callback_query.message.edit_text("Введите новый таймер пресета в формате чч.мм:")
     await callback_query.answer()
 
 
@@ -219,10 +221,10 @@ async def edit_preset_timer(message: Message, state: FSMContext, db: MDB):
 
 @router.message(PresetsManagement.edit_timer)
 async def edit_preset_timer(message: Message):
-    await message.answer("Таймер должен быть числом \nВведите число еще раз в формате часы.мин:")
+    await message.answer("Таймер должен быть числом \nВведите число еще раз в формате чч.мм:")
 
 
-@router.callback_query(F.data.startswith("edit_"))
+@router.callback_query(F.data.startswith("editPreset_"))
 async def edit_preset(callback_query: CallbackQuery):
     preset_id = int(callback_query.data.split('_', -1)[1])
     device_id = int(callback_query.data.split('_', -1)[2])
@@ -239,11 +241,18 @@ async def edit_preset(callback_query: CallbackQuery):
 @router.callback_query(F.data.startswith("run_preset_"))
 async def run_preset(callback_query: CallbackQuery, db: MDB, mqtt_client):
     preset_id = int(callback_query.data.split('_', -1)[2])
-    device_id = int(callback_query.data.split('_', -1)[3])
+    button_id = int(callback_query.data.split('_', -1)[3])
     user_id = callback_query.from_user.id
     user = await db.users.find_one({"_id": user_id})
+    user_devices = user["devices"]
+    device = user_devices[button_id]
+    device_id = device["device_id"]
     user_presets = user["presets"]
     preset = user_presets[preset_id]
-    # await publish.set_preset(mqtt_client, user_id, db)
-    await callback_query.answer("Пресет запущен.")
-    await callback_query.message.edit_text("Пресет запущен.")
+    await publish.set_preset(mqtt_client, user_id, device_id, preset_id, db)
+    # await callback_query.answer("Пресет запущен.")
+    await callback_query.message.edit_text("Пресет установлен.", reply_markup=inline_builder(
+        text=["<< Назад к устройству"],
+        callback_data=[f"device_{button_id}"],
+        sizes=[1]))
+    await callback_query.answer()

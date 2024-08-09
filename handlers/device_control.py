@@ -98,8 +98,10 @@ async def device_status(callback_query: CallbackQuery, mqtt_client, db: MDB):
     device_id = device["device_id"]
     status = "Статус с сувида"
     temperature = timer = duration = "Значение с сувида"
+    user_id = callback_query.from_user.id
+    message_id = callback_query.message.message_id
     await update_device_status(callback_query, device_name, button_id, status, temperature, timer, duration)
-    await publish.get_status(mqtt_client, callback_query.from_user.id, device_id)
+    await publish.get_status(mqtt_client, user_id, device_id, message_id)
 
 
 @router.callback_query(F.data.startswith("editDeviceName"))

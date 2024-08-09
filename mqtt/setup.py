@@ -8,6 +8,7 @@ import json
 from paho.mqtt import client as mqtt_client
 
 from motor.core import AgnosticDatabase as MDB
+from mqtt import publish
 
 load_dotenv()
 BROKER = os.getenv('MQTT_BROKER')
@@ -67,7 +68,10 @@ def on_message(client, userdata, msg):
 
 
 async def publish_message(cli, user_id, device_id, payload):
-    topic = f'{user_id}/{device_id}'
+    if device_id != -1:
+        topic = f'{user_id}/{device_id}'
+    else:
+        topic = f'{user_id}'
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, cli.publish, topic, payload)
     status = result[0]
@@ -141,17 +145,8 @@ def connect_mqtt(db: MDB, bot):
     async def database_registration(client, userdata, msg):
         print("Registration message received")
         user_id = int(msg.payload.decode())
-        # print(f"{user_id}")
-        user = await db.users.find_one({"_id": user_id})
-        # print(f"{user}")
-        connections = user["connections"]
-        # print(f"Connections for user_id {user_id} incremented to {connections}")
-        # await db.users.update_one({"_id": user_id}, {"$set": {"connections": connections}})
-        print(f"{user_id}; {connections}")
-        client.publish(f"{user_id}", f"{connections}")
+        await publish.new_device(client, user_id, db)
         print(f"Connections for user_id {user_id} published to topic {user_id}")
-        # print(f"Connections for user_id {user_id} published to topic {user_id}")
-        # Process registration message
 
     @topic("reg_conf")
     async def registration_confirmation(client, userdata, msg):
